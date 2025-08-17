@@ -1,0 +1,28 @@
+{
+    "name": "pxt-zoombit",
+    "version": "0.1.1",
+    "description": "MakeCode Package for Cytron ZOOM:BIT Robot Car Kit",
+    "license": "MIT",
+    "dependencies": {
+        "core": "*",
+        "radio": "*",
+        "microphone": "*",
+        "pxt-rekabit": "github:cytrontechnologies/pxt-rekabit"
+    },
+    "files": [
+        "README.md",
+        "main.ts"
+    ],
+    "testFiles": [
+        "test.ts"
+    ],
+    "public": true,
+    "targetVersions": {
+        "target": "5.0.12",
+        "targetId": "microbit"
+    },
+    "supportedTargets": [
+        "microbit"
+    ],
+    "preferredEditor": "tsprj"
+}

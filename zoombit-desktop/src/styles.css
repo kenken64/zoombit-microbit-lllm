@@ -1,0 +1,13 @@
+/* Global resets to improve responsive layout */
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+/* Ensure the root fills the window for 100vh calculations */
+app-root {
+  display: block;
+  height: 100vh;
+}
+
+/* You can add global styles to this file, and also import other style files */
