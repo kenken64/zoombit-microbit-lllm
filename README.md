@@ -1,5 +1,7 @@
 # zoombit-microbit-lllm
 
+![Zoombit preview](1.png)
+
 A small collection of tools, firmware and desktop UI for the Zoombit micro:bit robot project. This repository contains disassembly artifacts, a PXT (MakeCode) project, helper scripts and an Electron desktop UI used while developing and analyzing the Zoombit firmware.
 
 ## Contents
