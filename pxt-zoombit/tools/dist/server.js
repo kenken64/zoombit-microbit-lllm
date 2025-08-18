@@ -536,7 +536,7 @@ async function handleAiBuild(payload, res) {
         // Use the user's prompt as the default MCP search query so we fetch relevant examples
         const query = payload.query || userPrompt || '';
         const strict = payload.strict === true || shouldStrict(userPrompt);
-        const noExamples = payload.noExamples === true || strict; // avoid biasing in strict mode
+        const noExamples = payload.noExamples === true; // always call MCP unless explicitly disabled
         const debug = !!(payload.debug || process.env.AI_DEBUG);
         // Default to overwriting main.ts unless explicitly disabled
         const overwriteMain = (payload.overwriteMain !== false);
@@ -604,7 +604,16 @@ async function handleAiBuild(payload, res) {
         let mcpDebug = undefined;
         let openaiRawAny = undefined;
         if (!aiCode) {
-            const mcpResult = noExamples ? undefined : await mcpQueryExamples(mcpDir, repoRoot, query, debug);
+            let mcpResult = undefined;
+            if (noExamples) {
+                if (debug) {
+                    logger.debug('[DEBUG][MCP] Skipped due to noExamples flag');
+                    sseBroadcast('ai-debug', { phase: 'mcp', skipped: true, reason: 'noExamples flag' });
+                }
+            }
+            else {
+                mcpResult = await mcpQueryExamples(mcpDir, repoRoot, query, debug);
+            }
             if (mcpResult) {
                 examples = { sections: mcpResult.sections, raw: mcpResult.raw };
                 if (debug)
@@ -1037,7 +1046,7 @@ function mcpQueryExamples(mcpDir, repoRoot, query, debug) {
                     resolve({ _debug: { stdout: out, stderr: err, timeout: true } });
                 else
                     resolve({ _debug: { stdout: out, stderr: err, timeout: true } });
-            }, 3000);
+            }, 8000);
             proc.stdout.once('data', () => {
                 clearTimeout(timeout);
                 let firstResp = null;
