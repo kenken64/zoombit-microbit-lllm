@@ -11,7 +11,7 @@
   </div>
 
   <div class="sync">
-    <button (click)="syncToMicrobit()" [disabled]="!canSync || syncing">{{ syncing ? 'Syncing...' : 'Sync to MICROBIT' }}</button>
+  <button (click)="syncToMicrobit()" [disabled]="!canSync || syncing">{{ syncing ? 'Syncing...' : 'Sync' }}</button>
     <p>{{ syncMsg }}</p>
   </div>
 </div>

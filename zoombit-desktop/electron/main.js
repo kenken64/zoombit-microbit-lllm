@@ -117,6 +117,11 @@ ipcMain.handle('sync-hex', async () => {
   try {
     const tmp = path.join(os.tmpdir(), `binary-${Date.now()}.hex`);
     await downloadToFile('http://localhost:3000/download', tmp);
+    // Log the downloaded HEX file size
+    try {
+      const sz = fs.statSync(tmp).size;
+      console.log(`[DESKTOP][DOWNLOAD] HEX downloaded: ${tmp} (${sz} bytes)`);
+    } catch (_) {}
 
     const drive = findMicrobitDriveLetter();
     if (!drive) throw new Error('MICROBIT drive not found');
@@ -124,7 +129,9 @@ ipcMain.handle('sync-hex', async () => {
     const dest = path.join(`${drive}:\\`, 'binary.hex');
     fs.copyFileSync(tmp, dest);
 
-    return { success: true, drive: `${drive}:\\`, dest };
+    let size = 0;
+    try { size = fs.statSync(tmp).size; } catch (_) {}
+    return { success: true, drive: `${drive}:\\`, dest, size };
   } catch (e) {
     return { success: false, error: String(e) };
   }

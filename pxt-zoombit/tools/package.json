@@ -1,5 +1,15 @@
 {
+  "name": "zoombit-tools",
+  "private": true,
   "dependencies": {
-    "pxt-microbit": "^8.0.15"
+    "dotenv": "^16.4.5",
+  "pxt-microbit": "^8.0.15",
+  "pino": "^9.4.0",
+  "pino-pretty": "^11.2.2",
+  "prettier": "^3.3.3"
+  },
+  "scripts": {
+  "build": "tsc -p .",
+  "start": "node dist/server.js"
   }
 }

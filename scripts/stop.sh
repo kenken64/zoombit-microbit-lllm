@@ -1,24 +1,27 @@
 #!/usr/bin/env sh
 # Stop a running service/process by PID file or process name.
 # Usage:
-#   ./script/stop.sh [-p PID_FILE] [-n NAME] [-f]
+#   ./script/stop.sh [-p PID_FILE] [-n NAME] [-f] [-a]
 #
 # Options:
 #   -p PID_FILE : Path to PID file (default: ./.pid)
 #   -n NAME     : Process name to stop if PID file is not present/valid
 #   -f          : Force kill (SIGKILL) if graceful stop fails
+#   -a          : Stop both project services (tools server and MCP server) using default PID files
 
 set -eu
 
 PID_FILE="./.pid"
 NAME=""
 FORCE=0
+ALL=0
 
-while getopts "p:n:f" opt; do
+while getopts "p:n:fa" opt; do
   case "$opt" in
     p) PID_FILE="$OPTARG" ;;
     n) NAME="$OPTARG" ;;
     f) FORCE=1 ;;
+  a) ALL=1 ;;
     *) echo "Usage: $0 [-p PID_FILE] [-n NAME] [-f]" >&2; exit 1 ;;
   esac
 done
@@ -92,6 +95,28 @@ if [ -n "$NAME" ]; then
   exit $?
 fi
 
-echo "No PID file found or valid PID, and no -n NAME provided. Specify -p or -n." >&2
+# If -a was requested or no args provided, try stopping both project services using repo-root PID files
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PID_TOOLS="${REPO_ROOT}/.pid.tools-server"
+PID_MCP="${REPO_ROOT}/.pid.mcp-server"
+
+if [ "$ALL" -eq 1 ] || [ "$OPTIND" -eq 1 ]; then
+  if [ -f "$PID_TOOLS" ]; then
+    if pid=$(head -n1 "$PID_TOOLS" 2>/dev/null); then
+      case "$pid" in ''|*[!0-9]*) ;; *) stop_by_pid "$pid" ;; esac
+    fi
+    rm -f "$PID_TOOLS" 2>/dev/null || true
+  fi
+  if [ -f "$PID_MCP" ]; then
+    if pid=$(head -n1 "$PID_MCP" 2>/dev/null); then
+      case "$pid" in ''|*[!0-9]*) ;; *) stop_by_pid "$pid" ;; esac
+    fi
+    rm -f "$PID_MCP" 2>/dev/null || true
+  fi
+  exit 0
+fi
+
+echo "No PID file found or valid PID, and no -n NAME provided. Specify -p or -n, or use -a to stop project services." >&2
 exit 1
 

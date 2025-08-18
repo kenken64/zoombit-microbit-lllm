@@ -18,8 +18,8 @@ hljs.registerLanguage('typescript', typescript);
           <label>Prompt</label>
           <textarea [(ngModel)]="prompt" rows="4" style="width:100%" placeholder="Describe what to build (info only)"></textarea>
           <div class="actions">
-            <button (click)="sendPrompt()" [disabled]="building">{{ building ? 'Building...' : 'Send to Build' }}</button>
-            <button (click)="syncToMicrobit()" [disabled]="!canSync || syncing">{{ syncing ? 'Syncing...' : 'Sync to MICROBIT' }}</button>
+            <button (click)="sendPrompt()" [disabled]="building">{{ building ? 'Building...' : 'Build' }}</button>
+            <button (click)="syncToMicrobit()" [disabled]="!canSync || syncing">{{ syncing ? 'Syncing...' : 'Sync' }}</button>
           </div>
         </div>
 
@@ -40,7 +40,7 @@ hljs.registerLanguage('typescript', typescript);
     <!-- Right pane: Document images by page no. -->
     <div class="right-pane">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
-        <strong>Documents</strong>
+        <strong>Tutorial</strong>
       </div>
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
         <label>Page:</label>
@@ -177,6 +177,7 @@ basic.forever(function () {
     try {
       const es = new EventSource('http://localhost:3000/events');
       es.onmessage = () => {};
+      // Plain build (back-compat)
       es.addEventListener('build-succeeded', (/*e*/) => {
         this.zone.run(async () => {
           const ok = await this.loadCodeFromServer();
@@ -184,7 +185,39 @@ basic.forever(function () {
         });
       });
       es.addEventListener('build-failed', (e: any) => {
-        console.warn('Build failed event', e?.data);
+        try {
+          const data = JSON.parse(e?.data || '{}');
+          console.error('[DESKTOP][BUILD] Build failed (SSE):', { message: data?.message, error: data?.error, stack: data?.stack, stderr: data?.stderr, stdout: data?.stdout });
+        } catch {
+          console.warn('Build failed event', e?.data);
+        }
+      });
+      // AI build events
+      es.addEventListener('ai-build-succeeded', (/*e*/) => {
+        this.zone.run(async () => {
+          const ok = await this.loadCodeFromServer();
+          if (ok) this.renderCode();
+        });
+      });
+      es.addEventListener('ai-build-failed', (e: any) => {
+        try {
+          const data = JSON.parse(e?.data || '{}');
+          console.error('[DESKTOP][AI-BUILD] Build failed (SSE):', { message: data?.message, error: data?.error, stack: data?.stack, stderr: data?.stderr, stdout: data?.stdout });
+        } catch {
+          console.warn('AI build failed event', e?.data);
+        }
+      });
+      // Live AI code preview via debug SSE (contains a snippet of generated code)
+      es.addEventListener('ai-debug', (e: any) => {
+        try {
+          const data = JSON.parse(e?.data || '{}');
+          if (data?.phase === 'ai-code' && data?.snippet) {
+            this.zone.run(() => {
+              this.tsCode = String(data.snippet);
+              this.renderCode();
+            });
+          }
+        } catch {}
       });
     } catch {}
   }
@@ -297,17 +330,38 @@ basic.forever(function () {
     this.buildOk = null;
     this.buildMsg = '';
     try {
-      const res = await fetch('http://localhost:3000/build', { method: 'POST' });
-      const json = await res.json();
+      // Always use AI build endpoint with the user's prompt
+      const res = await fetch('http://localhost:3000/ai-build', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: this.prompt || '',
+          // Let server decide strict mode automatically based on prompt
+          // noExamples will be derived from strict as well
+          overwriteMain: true,
+          autoFix: true
+        })
+      });
+  const json = await res.json();
       this.buildOk = json.success;
-      this.buildMsg = json.message || (json.success ? 'Build succeeded' : 'Build failed');
+      this.buildMsg = json.message || (json.success ? 'AI build succeeded' : 'AI build failed');
       this.canSync = !!json.success;
       if (json.success) {
-        await this.loadCodeFromServer();
-        this.renderCode();
+        // Use aiCode from response if available, otherwise load from server
+        if (json.aiCode) {
+          this.tsCode = json.aiCode;
+          this.renderCode();
+        } else {
+          await this.loadCodeFromServer();
+          this.renderCode();
+        }
+      } else {
+        try {
+          console.error('[DESKTOP][AI-BUILD] Build failed (button):', { message: json?.message, error: json?.error, stack: json?.stack, stderr: json?.stderr, stdout: json?.stdout });
+        } catch {}
       }
     } catch (e: any) {
-      this.buildOk = false;
+  this.buildOk = false;
       this.buildMsg = String(e);
       this.canSync = false;
     } finally {
@@ -323,7 +377,26 @@ basic.forever(function () {
         if (contentType.includes('application/json')) {
           const js = await resp.json();
           if (js && (js.code || js.ts || js.source)) {
-            this.tsCode = js.code || js.ts || js.source;
+            const combined: string = js.code || js.ts || js.source;
+            let chosen = combined;
+            // Prefer main.ts if present; else fall back to ai.generated.ts; else show combined
+            try {
+              const filesArr = Array.isArray(js.files) ? js.files : [];
+              const names = filesArr.map((f: any) => String(f?.name || '').toLowerCase());
+              const want = names.includes('main.ts') ? 'main.ts' : (names.includes('ai.generated.ts') ? 'ai.generated.ts' : '');
+              if (want) {
+                const re = /\/\/ file: ([^\n]+)\n([\s\S]*?)(?=\n\/\/ file: |$)/g;
+                let m: RegExpExecArray | null;
+                while ((m = re.exec(combined)) !== null) {
+                  const name = (m[1] || '').trim().toLowerCase();
+                  if (name === want) {
+                    chosen = m[2] || '';
+                    break;
+                  }
+                }
+              }
+            } catch {}
+            this.tsCode = chosen;
             return true;
           }
         } else {
@@ -343,10 +416,35 @@ basic.forever(function () {
     this.syncing = true;
     this.syncMsg = '';
     try {
+      // First, ensure the HEX reflects the code shown in the viewer.
+      // Send the current TypeScript to the tools server to build.
+    let builtOk = true;
+      try {
+        const resp = await fetch('http://localhost:3000/ai-build', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: this.tsCode || '', overwriteMain: true, autoFix: true })
+        });
+        const js = await resp.json().catch(() => ({}));
+        builtOk = !!js?.success;
+        if (!builtOk) {
+          this.syncMsg = `Build failed before sync: ${js?.message || 'unknown error'}`;
+          try { console.error('[DESKTOP][AI-BUILD] Pre-sync build failed:', { message: js?.message, error: js?.error, stack: js?.stack, stderr: js?.stderr, stdout: js?.stdout }); } catch {}
+          return;
+        }
+      } catch (e: any) {
+        this.syncMsg = `Build error before sync: ${String(e)}`;
+        return;
+      }
+      // Then copy the latest HEX to the MICROBIT drive via Electron main.
       // @ts-ignore
       const result = await (window as any).electronAPI?.syncHex?.();
       if (result?.success) {
         this.syncMsg = `Copied to ${result.drive}`;
+        try {
+          const sz = Number(result.size || 0);
+          console.log('[DESKTOP][DOWNLOAD] HEX size:', sz, 'bytes');
+        } catch {}
       } else {
         this.syncMsg = `Failed: ${result?.error || 'unknown error'}`;
       }
