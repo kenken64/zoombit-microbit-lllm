@@ -1,2 +1,0 @@
-Initial_SP = 0x000007C0
-Reset_Handler = 0x000006D0
