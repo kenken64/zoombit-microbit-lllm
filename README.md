@@ -1,4 +1,4 @@
-# zoombit-microbit-lllm
+# zoombit-microbit-llm
 
 ![Zoombit preview](1.png)
 
